@@ -1,76 +1,41 @@
-import json
-from pathlib import Path
+"""
+FastMCP quickstart example.
+
+cd to the `examples/snippets/clients` directory and run:
+    uv run server fastmcp_quickstart stdio
+"""
+
 from mcp.server.fastmcp import FastMCP
-from pydantic import BaseModel
 
-RECORDS = json.loads(Path(__file__).with_name("records.json").read_text())
-LOOKUP = {r["id"]: r for r in RECORDS}
+# Create an MCP server
+mcp = FastMCP("Demo")
 
-class SearchResult(BaseModel):
-    id: str
-    title: str
-    text: str
 
-class SearchResultPage(BaseModel):
-    results: list[SearchResult]
+# Add an addition tool
+@mcp.tool()
+def add(a: int, b: int) -> int:
+    """Add two numbers"""
+    return a + b
 
-class FetchResult(BaseModel):
-    id: str
-    title: str
-    text: str
-    url: str | None = None
-    metadata: dict[str, str] | None = None
 
-def create_server():
-    mcp = FastMCP(name="Cupcake MCP", instructions="Search cupcake orders")
+# Add a dynamic greeting resource
+@mcp.resource("greeting://{name}")
+def get_greeting(name: str) -> str:
+    """Get a personalized greeting"""
+    return f"Hello, {name}!"
 
-    @mcp.tool()
-    async def search(query: str) -> SearchResultPage:
-        """
-        Search for cupcake orders – keyword match.
 
-        Returns a SearchResultPage containing a list of SearchResult items.
-        """
-        toks = query.lower().split()
-        results: list[SearchResult] = []
-        for r in RECORDS:
-            hay = " ".join(
-                [
-                    r.get("title", ""),
-                    r.get("text", ""),
-                    " ".join(r.get("metadata", {}).values()),
-                ]
-            ).lower()
-            if any(t in hay for t in toks):
-                results.append(
-                    SearchResult(id=r["id"], title=r.get("title", ""), text=r.get("text", ""))
-                )
+# Add a prompt
+@mcp.prompt()
+def greet_user(name: str, style: str = "friendly") -> str:
+    """Generate a greeting prompt"""
+    styles = {
+        "friendly": "Please write a warm, friendly greeting",
+        "formal": "Please write a formal, professional greeting",
+        "casual": "Please write a casual, relaxed greeting",
+    }
 
-        # Return the Pydantic model (FastMCP will serialise it for us)
-        return SearchResultPage(results=results)
-
-    @mcp.tool()
-    async def fetch(id: str) -> FetchResult:
-        """
-        Fetch a cupcake order by ID.
-
-        Returns a FetchResult model.
-        """
-        if id not in LOOKUP:
-            raise ValueError("unknown id")
-
-        r = LOOKUP[id]
-        return FetchResult(
-            id=r["id"],
-            title=r.get("title", ""),
-            text=r.get("text", ""),
-            url=r.get("url"),
-            metadata=r.get("metadata"),
-        )
-
-    return mcp
-
-app = create_server()
+    return f"{styles.get(style, styles['friendly'])} for someone named {name}."
 
 if __name__ == "__main__":
-    app.run(transport="sse")
+    mcp.run(transport="streamable-http")
